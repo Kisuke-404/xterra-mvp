@@ -1,48 +1,59 @@
 # Xterra MVP - Automated Mineral Discovery
-Automated mineral hotspot detection using satellite imagery
-
-## What This Does
-Analyzes Sentinel-2 satellite data to identify:
-- **Porphyry Copper deposits** (deep, 250-750m)
-- **Epithermal Gold** (shallow, 100-300m)
-- Alteration minerals (K-feldspar, clay, silica, iron oxide)
-- Geological risk assessment
+AI-powered mineral hotspot detection using satellite imagery
 
 ## Features
-- Interactive map (draw your Area of Interest)
-- Mineral potential scoring (88.9% accuracy demonstrated)
-- Professional geological interpretation
-- Exploration drilling recommendations
-- Risk assessment
+- **Interactive Map** - Draw your Area of Interest (AOI)
+- **Mineral Analysis** - Detects copper & gold deposits
+- **Confidence Scoring** - 88.9% accuracy demonstrated
+- **Geological Interpretation** - Professional insights
+- **Drilling Recommendations** - Actionable next steps
+- **Risk Assessment** - Low-risk targeting
 
-## Example Results
-For Carlin Trend, Nevada:
-- **Copper Potential:** 88.9% confidence
-- **Gold Potential:** 75.3% confidence
-- **System Type:** Porphyry Copper + Epithermal Gold
-- **Recommendation:** PROCEED WITH DRILLING
+## Example Results (Carlin Trend, Nevada)
+```
+🔴 Copper Potential: 88.9% confidence (HIGH)
+🟡 Gold Potential: 75.3% confidence (MODERATE-HIGH)
 
-## How to Use
-1. Open the notebook in Google Colab
+✓ K-Feldspar: STRONG → Potassic copper core
+✓ Clay: STRONG → Argillic alteration zones
+✓ Iron Oxide: STRONG → Near-surface oxidation
+✓ Silica: STRONG → Epithermal gold indicator
+
+Recommendation: PROCEED WITH DRILLING
+Risk Level: LOW
+```
+
+## Quick Start
+### Option 1: Google Colab (No Setup Required)
+1. Open the notebook in Colab
 2. Run all cells
-3. Draw your Area of Interest on the interactive map
-4. Get instant geological analysis
+3. Draw your AOI on the map
+4. Get instant analysis
 
-## Requirements
-- `carlin_s2.tif` (Sentinel-2 satellite image)
-- Python 3
-- Libraries: numpy, rasterio, folium, scipy
+### Option 2: Local Python
+```bash
+pip install -r requirements.txt
+python backend/analysis.py
+```
+## 🛰️ How It Works
+1. **Load Satellite Data** - Sentinel-2 imagery
+2. **Calculate Mineral Indices** - Iron oxide, clay, silica, K-feldspar
+3. **Classify Lithology** - Rock types
+4. **Interactive Map** - User draws Area of Interest
+5. **Detect Hotspots** - Porphyry copper & epithermal gold
+6. **Generate Insights** - Professional analysis
 
-## 🛠️ Technology
-- **Backend:** Python (NumPy, SciPy, Rasterio)
-- **Frontend:** Google Colab + Folium, Vercel V0
-- **Data:** Sentinel-2 (10m resolution, open source)
+## Project Structure
+1. backend/        - Core processing logic
+2. frontend/       - Visualization & UI
+3. notebooks/      - Google Colab notebooks
+4. data/           - Data files & documentation
 
-## 📈 Next Steps
-- [ ] Phase 1: Multi-region support
-- [ ] Phase 2: Near Real-time data integration
-- [ ] Phase 3: Web application with agentic environment
-- [ ] Phase 4: Proprietary AI/MLs, AOI comparison analysis 
+## Technology Stack
+- **Backend:** Python, NumPy, Rasterio, SciPy
+- **Frontend:** Folium, Matplotlib, Google Colab
+- **Data:** Sentinel-2 satellite imagery
 
-## Author
-Kisuke: Built for Xterra Team
+## Supported Minerals
+- **Porphyry Copper** (250-750m depth)
+- **Epithermal Gold** (100-300m depth)
