@@ -8,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
 
-# Import routes (will be created next)
+# Import routes
 try:
-    from routes import analyze
+    from backend.routes import analyze
 except ImportError:
     # Routes module not yet created - will be available after routes.analyze is created
     analyze = None
@@ -71,7 +71,7 @@ async def health_check():
     return {"status": "ok"}
 
 
-# Include routes from routes.analyze if available
+# Include routes from backend.routes.analyze if available
 if analyze:
     app.include_router(analyze.router, prefix="/analyze", tags=["analysis"])
 
@@ -85,9 +85,8 @@ if __name__ == "__main__":
     - reload: True (enables auto-reload on code changes for development)
     """
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True
     )
-
