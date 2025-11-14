@@ -20,7 +20,7 @@ if project_root not in sys.path:
 
 # Import backend analysis modules
 from backend import mineral_indices, lithology, hotspot_detector, analysis
-from config import CARLIN_IMAGE_PATH
+from config import CARLIN_IMAGE_PATH, CARLIN_TREND_COORDS
 
 # Configure logging for this module
 # This helps track errors and debug issues in production
@@ -41,12 +41,11 @@ class AOIRequest(BaseModel):
     Area of Interest (AOI) request model
     Defines the geographic bounds for mineral analysis
     """
-    lat_min: float  # Minimum latitude (southern boundary)
-    lat_max: float  # Maximum latitude (northern boundary)
-    lon_min: float  # Minimum longitude (western boundary)
-    lon_max: float  # Maximum longitude (eastern boundary)
-    satellite_data_path: str = str(CARLIN_IMAGE_PATH)  # Path to satellite image file (defaults to Carlin image)
-
+    lat_min: float = CARLIN_TREND_COORDS["lat_min"]  # Minimum latitude (southern boundary)
+    lat_max: float = CARLIN_TREND_COORDS["lat_max"]  # Maximum latitude (northern boundary)
+    lon_min: float = CARLIN_TREND_COORDS["lon_min"]  # Minimum longitude (western boundary)
+    lon_max: float = CARLIN_TREND_COORDS["lon_max"]  # Maximum longitude (eastern boundary)
+    satellite_data_path: str = str(CARLIN_IMAGE_PATH)
 
 # ============================================================================
 # RESPONSE MODELS - Define the structure of API responses
@@ -76,6 +75,9 @@ class AnalysisResponse(BaseModel):
     gold_potential: Dict           # Gold potential analysis results
     minerals: Dict                 # Mineral index analysis results
     recommendations: Dict          # Exploration recommendations and next steps
+    copper_heatmap: str = ""       # Base64 encoded copper heatmap image
+    gold_heatmap: str = ""         # Base64 encoded gold heatmap image
+    heatmap_bounds: Dict = {}      # Geographic bounds of heatmap
 
 
 # ============================================================================
@@ -170,6 +172,109 @@ async def analyze_status():
     """
     return {"status": "ok"}
 
+import base64
+from io import BytesIO
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from PIL import Image
+
+def array_to_heatmap_image(score_array: np.ndarray, bounds: dict, mineral_type: str) -> str:
+    """
+    Convert a score array to a heatmap image and return as Base64
+    
+    Parameters:
+    -----------
+    score_array : np.ndarray
+        Array of confidence scores (0-100)
+    bounds : dict
+        Geographic bounds {'lat_min', 'lat_max', 'lon_min', 'lon_max'}
+    mineral_type : str
+        "copper" or "gold" (for logging)
+    
+    Returns:
+    --------
+    str : Base64 encoded PNG image
+    """
+    try:
+        # Create custom colormap: Red → Orange → Yellow → Light Yellow
+        # Red (high confidence) → Yellow (low confidence)
+        colors = ['#FFFFCC', '#FFD700', '#FFA500', '#FF4500']  # Light Yellow → Gold → Orange → Red
+        n_bins = 100
+        cmap = LinearSegmentedColormap.from_list('mineral', colors, N=n_bins)
+        
+        # Normalize array to 0-100 range
+        normalized = np.clip(score_array, 0, 100)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=100)
+        
+        # Display heatmap
+        im = ax.imshow(normalized, cmap=cmap, aspect='auto', origin='upper', vmin=0, vmax=100)
+        
+        # Remove axes
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.axis('off')
+        
+        # Convert to PNG in memory
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', pad_inches=0, transparent=True, dpi=100)
+        buffer.seek(0)
+        plt.close(fig)
+        
+        # Convert to Base64
+        image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        logger.info(f"Generated {mineral_type} heatmap image (Base64 size: {len(image_base64)} bytes)")
+        
+        return image_base64
+        
+    except Exception as e:
+        logger.error(f"Error generating heatmap image: {str(e)}")
+        return ""
+
+
+def crop_array_to_bounds(array: np.ndarray, full_bounds: dict, crop_bounds: dict, transform) -> np.ndarray:
+    """
+    Crop a raster array to specific geographic bounds
+    
+    Parameters:
+    -----------
+    array : np.ndarray
+        Full raster array
+    full_bounds : dict
+        Full image bounds from rasterio
+    crop_bounds : dict
+        Desired crop bounds {'lat_min', 'lat_max', 'lon_min', 'lon_max'}
+    transform : rasterio.Affine
+        Geospatial transform
+    
+    Returns:
+    --------
+    np.ndarray : Cropped array
+    """
+    try:
+        # Convert geographic bounds to pixel indices
+        from rasterio.windows import Window
+        
+        # Get pixel coordinates for crop bounds
+        row_min, col_min = rasterio.transform.rowcol(transform, crop_bounds['lon_max'], crop_bounds['lat_max'])
+        row_max, col_max = rasterio.transform.rowcol(transform, crop_bounds['lon_min'], crop_bounds['lat_min'])
+        
+        # Ensure indices are within bounds
+        row_min = max(0, row_min)
+        col_min = max(0, col_min)
+        row_max = min(array.shape[0], row_max)
+        col_max = min(array.shape[1], col_max)
+        
+        # Crop array
+        cropped = array[row_min:row_max, col_min:col_max]
+        logger.info(f"Cropped array from {array.shape} to {cropped.shape}")
+        
+        return cropped
+        
+    except Exception as e:
+        logger.error(f"Error cropping array: {str(e)}")
+        return array
 
 @router.post("/", response_model=AnalysisResponse)
 async def analyze_aoi(request: AOIRequest):
@@ -273,7 +378,20 @@ async def analyze_aoi(request: AOIRequest):
             mineral_indices_result['silica']
         )
         
-        # Step 7: Extract hotspot locations with coordinates
+        # Step 7: Generate heatmap images
+        # Convert score arrays to Base64 encoded PNG images with legend colors
+        logger.info("Generating heatmap images...")
+        copper_heatmap = array_to_heatmap_image(hotspots_result['copper_score'], request.__dict__, "copper")
+        gold_heatmap = array_to_heatmap_image(hotspots_result['gold_score'], request.__dict__, "gold")
+        
+        heatmap_bounds = {
+            "lat_min": request.lat_min,
+            "lat_max": request.lat_max,
+            "lon_min": request.lon_min,
+            "lon_max": request.lon_max,
+        }
+        
+        # Step 8: Extract hotspot locations with coordinates
         # Convert pixel-based hotspots to geographic coordinates
         logger.info("Extracting hotspot coordinates...")
         all_hotspots = []
@@ -300,14 +418,17 @@ async def analyze_aoi(request: AOIRequest):
         
         logger.info(f"Found {len(all_hotspots)} total hotspots")
         
-        # Step 8: Build response with all analysis results
+        # Step 9: Build response with all analysis results
         response = AnalysisResponse(
             status="success",
             hotspots=all_hotspots,
             copper_potential=geological_analysis['copper'],
             gold_potential=geological_analysis['gold'],
             minerals=geological_analysis['minerals'],
-            recommendations=geological_analysis['recommendations']
+            recommendations=geological_analysis['recommendations'],
+            copper_heatmap=copper_heatmap,
+            gold_heatmap=gold_heatmap,
+            heatmap_bounds=heatmap_bounds
         )
         
         logger.info("Analysis completed successfully")

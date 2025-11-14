@@ -13,10 +13,11 @@ import { Insights } from "@/components/insights" // Added Insights import
 import { Hotspots } from "@/components/hotspots" // Added hotspots import
 import { Legend } from "@/components/legend" // Added legend import
 import { handleUploadAOI } from "@/utils/uploadAOI"
+import { Heatmap } from "@/components/heatmap"
 
 const CARLIN_TREND_COORDS = {
-  latitude: 40.7822,
-  longitude: -116.214,
+  latitude: 40.9845,
+  longitude: -116.3848,
 }
 
 export default function Home() {
@@ -36,6 +37,9 @@ export default function Home() {
   const [hotspotsVisible, setHotspotsVisible] = useState(false) // Added hotspots state
   const [legendOpen, setLegendOpen] = useState(false) // Added legend state
   const [drawnAOI, setDrawnAOI] = useState<any>(null) // Added state to store drawn AOI geometry
+  const [copperHeatmap, setCopperHeatmap] = useState<string>("")
+  const [goldHeatmap, setGoldHeatmap] = useState<string>("")
+  const [heatmapBounds, setHeatmapBounds] = useState<any>(null)
 
   useEffect(() => {
     // Load OpenLayers from CDN
@@ -200,17 +204,50 @@ export default function Home() {
     }
   }
 
-  const handleRunModel = (filters: any) => {
+  const handleRunModel = async (filters: any) => {
     console.log("[v0] Running model with filters:", filters)
     setDataSelectOpen(false)
     setInsightsOpen(true)
     setActiveStage("insights")
-    // Reset hotspots for new model run
     setHotspotsVisible(false)
+    
+    // Call backend API to get analysis + heatmap
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+      const response = await fetch(`${backendUrl}/analyze/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat_min: drawnAOI ? 40.97 : 40.97,
+          lat_max: drawnAOI ? 40.99 : 40.99,
+          lon_min: drawnAOI ? -116.39 : -116.39,
+          lon_max: drawnAOI ? -116.38 : -116.38,
+        }),
+      })
+      
+      if (!response.ok) throw new Error("Analysis failed")
+      
+      const data = await response.json()
+      
+      // Store heatmap data
+      if (data.copper_heatmap) setCopperHeatmap(data.copper_heatmap)
+      if (data.gold_heatmap) setGoldHeatmap(data.gold_heatmap)
+      if (data.heatmap_bounds) setHeatmapBounds(data.heatmap_bounds)
+      
+      console.log("[v0] Analysis complete, heatmap data received")
+    } catch (error) {
+      console.error("[v0] Error calling backend:", error)
+    }
+    
+    // Trigger hotspots after 5 seconds (when insights complete)
+    setTimeout(() => {
+      setHotspotsVisible(true)
+    }, 5000)
   }
 
   // Trigger hotspots display when insights load completes
   const handleInsightsLoadComplete = () => {
+    // Heatmap will show when hotspots become visible
     setHotspotsVisible(true)
   }
 
@@ -219,6 +256,22 @@ export default function Home() {
       return (
         <>
           <div ref={mapContainer} className="w-full h-full" />
+
+          {/* Heatmap overlay layers */}
+          <Heatmap
+            isVisible={hotspotsVisible && copperHeatmap !== ""}
+            heatmapImage={copperHeatmap}
+            bounds={heatmapBounds || { lat_min: 40.97, lat_max: 40.99, lon_min: -116.39, lon_max: -116.38 }}
+            mineralType="copper"
+            mapRef={mapRef}
+          />
+          <Heatmap
+            isVisible={hotspotsVisible && goldHeatmap !== ""}
+            heatmapImage={goldHeatmap}
+            bounds={heatmapBounds || { lat_min: 40.97, lat_max: 40.99, lon_min: -116.39, lon_max: -116.38 }}
+            mineralType="gold"
+            mapRef={mapRef}
+          />
 
           <div className="absolute bottom-16 right-4 flex flex-col gap-2">
   <div

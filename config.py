@@ -33,6 +33,16 @@ CORS_ORIGINS = ["*"]
 # Controls the verbosity of application logs
 # Options: "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
 LOG_LEVEL = "INFO"
+# Carlin Trend Coordinates (Nevada, USA)
+# Default Area of Interest for mineral analysis
+CARLIN_TREND_COORDS = {
+    "latitude": 40.9845,
+    "longitude": -116.3848,
+    "lat_min": 40.97,
+    "lat_max": 40.99,
+    "lon_min": -116.39,
+    "lon_max": -116.38,
+}
 
 # Print configuration paths when module is imported
 # This helps verify that paths are set correctly during development

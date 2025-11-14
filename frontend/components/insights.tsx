@@ -8,6 +8,9 @@ interface InsightsProps {
   onLoadingComplete?: () => void
 }
 
+// Type definition for section keys to ensure type safety
+type SectionKey = "findings" | "evidence" | "quality" | "recommendations"
+
 export function Insights({ isOpen, onClose, onLoadingComplete }: InsightsProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [results, setResults] = useState<any>(null)
@@ -47,14 +50,16 @@ export function Insights({ isOpen, onClose, onLoadingComplete }: InsightsProps) 
     }
   }, [isOpen])
 
-  const toggleSection = (section: string) => {
+  // Toggle the expanded state of a specific section
+  const toggleSection = (section: SectionKey) => {
     setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }))
   }
 
-  const SectionHeader = ({ title, icon, section }: { title: string; icon: string; section: string }) => (
+  // Component for section headers with expand/collapse functionality
+  const SectionHeader = ({ title, icon, section }: { title: string; icon: string; section: SectionKey }) => (
     <button
       onClick={() => toggleSection(section)}
       className="w-full flex items-center justify-between p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors"
@@ -63,7 +68,7 @@ export function Insights({ isOpen, onClose, onLoadingComplete }: InsightsProps) 
         <span className="text-base">{icon}</span>
         <h3 className="text-white font-semibold text-xs">{title}</h3>
       </div>
-      <span className="text-white/60 text-xs">{expandedSections[section as keyof typeof expandedSections] ? "▼" : "▶"}</span>
+      <span className="text-white/60 text-xs">{expandedSections[section] ? "▼" : "▶"}</span>
     </button>
   )
 
