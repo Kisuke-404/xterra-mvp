@@ -165,18 +165,6 @@ def extract_hotspots_from_mask(mask: np.ndarray, score_array: np.ndarray,
     return hotspots
 
 
-# ============================================================================
-# API ENDPOINTS - Define the HTTP endpoints for the analysis API
-# ============================================================================
-
-@router.get("/status")
-async def analyze_status():
-    """
-    Health check endpoint for the analysis service
-    Returns status "ok" if the service is operational
-    """
-    return {"status": "ok"}
-
 def array_to_heatmap_image(score_array: np.ndarray, bounds: dict, mineral_type: str) -> str:
     """
     Convert a score array to a heatmap image and return as Base64
@@ -274,6 +262,20 @@ def crop_array_to_bounds(array: np.ndarray, full_bounds: dict, crop_bounds: dict
     except Exception as e:
         logger.error(f"Error cropping array: {str(e)}")
         return array
+
+
+# ============================================================================
+# API ENDPOINTS - Define the HTTP endpoints for the analysis API
+# ============================================================================
+
+@router.get("/status")
+async def analyze_status():
+    """
+    Health check endpoint for the analysis service
+    Returns status "ok" if the service is operational
+    """
+    return {"status": "ok"}
+
 
 @router.post("/", response_model=AnalysisResponse)
 async def analyze_aoi(request: AOIRequest):
@@ -450,4 +452,3 @@ async def analyze_aoi(request: AOIRequest):
             status_code=500,
             detail=f"Internal server error during analysis: {str(e)}"
         )
-
