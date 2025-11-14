@@ -11,6 +11,11 @@ import numpy as np
 import rasterio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import base64
+from io import BytesIO
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from PIL import Image
 
 # Add project root to path to import backend modules
 # This allows importing backend modules regardless of where the script is run from
@@ -171,12 +176,6 @@ async def analyze_status():
     Returns status "ok" if the service is operational
     """
     return {"status": "ok"}
-
-import base64
-from io import BytesIO
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from PIL import Image
 
 def array_to_heatmap_image(score_array: np.ndarray, bounds: dict, mineral_type: str) -> str:
     """
