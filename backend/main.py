@@ -9,99 +9,167 @@ import uvicorn
 from contextlib import asynccontextmanager
 import sys
 import os
+import numpy as np
+import rasterio
+from rasterio.transform import from_bounds
 import gdown  # type: ignore[import]
 
 # Ensure backend package is on the Python path so we can import routes reliably
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def download_carlin_data() -> None:
-    """Generate synthetic test GeoTIFF if real file doesn't exist"""
+def generate_synthetic_data_at_coordinates(file_path):
+    """Generate synthetic data at user's AOI coordinates as fallback"""
+    print("Generating synthetic data at user's AOI coordinates...")
 
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_bounds
+    # User's target coordinates (center: 40.9840, -116.3840)
+    center_lat, center_lon = 40.9840, -116.3840
 
+    # Create bounding box
+    lat_range = 0.5  # 0.5 degrees latitude
+    lon_range = 0.6  # 0.6 degrees longitude
+
+    lon_min = center_lon - lon_range / 2
+    lon_max = center_lon + lon_range / 2
+    lat_min = center_lat - lat_range / 2
+    lat_max = center_lat + lat_range / 2
+
+    # Create realistic synthetic data
+    height, width = 500, 500
+    np.random.seed(42)
+
+    # Base bands
+    band1 = np.full((height, width), 2000, dtype="uint16")  # Red
+    band2 = np.full((height, width), 3000, dtype="uint16")  # NIR
+    band3 = np.full((height, width), 2500, dtype="uint16")  # SWIR1
+    band4 = np.full((height, width), 2000, dtype="uint16")  # SWIR2
+
+    # Add 10 strong iron oxide hotspots
+    for _ in range(10):
+        y = np.random.randint(50, height - 100)
+        x = np.random.randint(50, width - 100)
+        size = np.random.randint(40, 80)
+
+        Y, X = np.ogrid[:size, :size]
+        center = size // 2
+        dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
+        mask = np.maximum(1 - dist / (size / 2), 0)
+
+        band1[y : y + size, x : x + size] += (mask * 3000).astype("uint16")
+        band4[y : y + size, x : x + size] = np.maximum(
+            band4[y : y + size, x : x + size] - (mask * 1000).astype("uint16"), 500
+        )
+
+    # Add 10 strong clay hotspots
+    for _ in range(10):
+        y = np.random.randint(50, height - 100)
+        x = np.random.randint(50, width - 100)
+        size = np.random.randint(40, 80)
+
+        Y, X = np.ogrid[:size, :size]
+        center = size // 2
+        dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
+        mask = np.maximum(1 - dist / (size / 2), 0)
+
+        band3[y : y + size, x : x + size] += (mask * 4000).astype("uint16")
+
+    # Create transform
+    transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
+
+    # Write GeoTIFF
+    with rasterio.open(
+        file_path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=4,
+        dtype="uint16",
+        crs="EPSG:4326",
+        transform=transform,
+    ) as dst:
+        dst.write(band1, 1)
+        dst.write(band2, 2)
+        dst.write(band3, 3)
+        dst.write(band4, 4)
+
+    print(
+        f"✓ Generated synthetic data at coords: {lat_min:.2f}-{lat_max:.2f}, {lon_min:.2f}-{lon_max:.2f}"
+    )
+
+
+def download_carlin_data():
+    """Download real Carlin data and reposition, or generate synthetic fallback"""
     file_path = "/app/backend/data/carlin_s2.tif"
+    temp_path = "/app/backend/data/carlin_original.tif"
 
-    # Create data directory if it doesn't exist
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-    # Check if file already exists
-    if os.path.exists(file_path):
-        print(f"✓ Carlin data file already exists at {file_path}")
+    # Check if already exists and is valid
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 1_000_000:
+        print(f"✓ Carlin data already exists at {file_path}")
         return
 
-    print("Generating synthetic test data for Carlin Trend...")
+    # TRY APPROACH 1: Download real Carlin data
+    print("Attempting to download real Carlin data from Google Drive...")
+    url = "https://drive.google.com/file/d/1OuwOtp55u3_JHR2xIofvJkJz1mLhW6ns/view?usp=sharing"
 
     try:
-        # Carlin Trend coordinates
-        lon_min, lon_max = -116.8, -116.2
-        lat_min, lat_max = 40.5, 40.95
+        gdown.download(url, temp_path, quiet=False, fuzzy=True)
 
-        # Create synthetic 4-band image (500x500 pixels)
-        height, width = 500, 500
+        # Check if download succeeded
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 1_000_000:
+            print("✓ Real Carlin data downloaded successfully!")
+            print("Repositioning to user's AOI coordinates...")
 
-        # Set random seed for reproducibility
-        np.random.seed(42)
+            # Read original data
+            with rasterio.open(temp_path) as src:
+                data = src.read()
 
-        # Create base bands with realistic satellite values
-        band1 = np.full((height, width), 2000, dtype="uint16")  # Red baseline
-        band2 = np.full((height, width), 3000, dtype="uint16")  # NIR baseline
-        band3 = np.full((height, width), 2500, dtype="uint16")  # SWIR1 baseline
-        band4 = np.full((height, width), 2000, dtype="uint16")  # SWIR2 baseline
+            # User's target coordinates
+            center_lat, center_lon = 40.9840, -116.3840
+            lat_range, lon_range = 0.5, 0.6
 
-        # Add 10 STRONG iron oxide hotspots (high band1, low band4)
-        for _ in range(10):
-            y = np.random.randint(50, height - 100)
-            x = np.random.randint(50, width - 100)
-            size = np.random.randint(40, 80)
+            lon_min = center_lon - lon_range / 2
+            lon_max = center_lon + lon_range / 2
+            lat_min = center_lat - lat_range / 2
+            lat_max = center_lat + lat_range / 2
 
-            # Create gradient effect
-            Y, X = np.ogrid[:size, :size]
-            center = size // 2
-            dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
-            mask = np.maximum(1 - dist / (size / 2), 0)
+            # Create new transform
+            height, width = data.shape[1], data.shape[2]
+            transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
 
-            band1[y : y + size, x : x + size] += (mask * 3000).astype("uint16")  # VERY high iron oxide
-            band4[y : y + size, x : x + size] = np.maximum(
-                band4[y : y + size, x : x + size] - (mask * 1000).astype("uint16"), 500
+            # Write with new coordinates
+            with rasterio.open(
+                file_path,
+                "w",
+                driver="GTiff",
+                height=height,
+                width=width,
+                count=data.shape[0],
+                dtype=data.dtype,
+                crs="EPSG:4326",
+                transform=transform,
+            ) as dst:
+                dst.write(data)
+
+            # Clean up
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+            print(
+                f"✓ Repositioned real Carlin data to: {lat_min:.2f}-{lat_max:.2f}, {lon_min:.2f}-{lon_max:.2f}"
             )
+            return
+        else:
+            print("✗ Download failed or file too small, using synthetic data...")
 
-        # Add 10 STRONG clay hotspots (high band3)
-        for _ in range(10):
-            y = np.random.randint(50, height - 100)
-            x = np.random.randint(50, width - 100)
-            size = np.random.randint(40, 80)
-
-            Y, X = np.ogrid[:size, :size]
-            center = size // 2
-            dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
-            mask = np.maximum(1 - dist / (size / 2), 0)
-
-            band3[y : y + size, x : x + size] += (mask * 4000).astype("uint16")  # VERY high clay
-
-        # Create transform
-        transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
-
-        # Write GeoTIFF
-        with rasterio.open(
-            file_path, 'w',
-            driver='GTiff',
-            height=height, width=width,
-            count=4,
-            dtype='uint16',
-            crs='EPSG:4326',
-            transform=transform
-        ) as dst:
-            dst.write(band1, 1)
-            dst.write(band2, 2)
-            dst.write(band3, 3)
-            dst.write(band4, 4)
-
-        print(f"✓ Generated synthetic test data at {file_path}")
     except Exception as e:
-        print(f"✗ Error generating test data: {e}")
+        print(f"✗ Download error: {e}")
+        print("Falling back to synthetic data...")
+
+    # APPROACH 2: Generate synthetic data (fallback)
+    generate_synthetic_data_at_coordinates(file_path)
 
 
 # Import analysis router with graceful fallback if it is not available
