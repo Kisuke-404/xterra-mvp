@@ -71,18 +71,23 @@ class HotspotData(BaseModel):
 
 class AnalysisResponse(BaseModel):
     """
-    Complete analysis response containing all results
-    Includes hotspot locations, mineral potentials, and recommendations
+    Complete analysis response containing all results.
+
+    This model is what the frontend consumes. It deliberately mirrors
+    the structure of the JSON returned by the API so changes here
+    are easy to track and reason about.
     """
-    status: str                    # Status of the analysis ("success" or "error")
-    hotspots: List[HotspotData]    # List of detected mineral hotspots
-    copper_potential: Dict         # Copper potential analysis results
-    gold_potential: Dict           # Gold potential analysis results
-    minerals: Dict                 # Mineral index analysis results
-    recommendations: Dict          # Exploration recommendations and next steps
-    copper_heatmap: str = ""       # Base64 encoded copper heatmap image
-    gold_heatmap: str = ""         # Base64 encoded gold heatmap image
-    heatmap_bounds: Dict = {}      # Geographic bounds of heatmap
+
+    status: str  # Status of the analysis ("success" or "error")
+    hotspots: List[HotspotData]  # List of detected mineral hotspots
+    copper_potential: Dict  # Copper potential analysis results
+    gold_potential: Dict  # Gold potential analysis results
+    minerals: Dict  # Mineral index analysis results
+    recommendations: Dict  # Exploration recommendations and next steps
+    copper_heatmap: str = ""  # Base64 encoded copper heatmap image
+    gold_heatmap: str = ""  # Base64 encoded gold heatmap image
+    heatmap_bounds: Dict = {}  # Geographic bounds of heatmap
+    heatmap_grid: Dict = {}  # Structured 50x50 grid aligned with AOI and legend
 
 
 # ============================================================================
@@ -382,16 +387,36 @@ async def analyze_aoi(request: AOIRequest):
         # Step 7: Generate heatmap images
         # Convert score arrays to Base64 encoded PNG images with legend colors
         logger.info("Generating heatmap images...")
-        copper_heatmap = array_to_heatmap_image(hotspots_result['copper_score'], request.__dict__, "copper")
-        gold_heatmap = array_to_heatmap_image(hotspots_result['gold_score'], request.__dict__, "gold")
-        
+        copper_heatmap = array_to_heatmap_image(
+            hotspots_result["copper_score"], request.__dict__, "copper"
+        )
+        gold_heatmap = array_to_heatmap_image(
+            hotspots_result["gold_score"], request.__dict__, "gold"
+        )
+
         heatmap_bounds = {
             "lat_min": request.lat_min,
             "lat_max": request.lat_max,
             "lon_min": request.lon_min,
             "lon_max": request.lon_max,
         }
-        
+
+        # Step 7b: Build structured 50x50 heatmap grid aligned with AOI bounds.
+        # This uses the underlying mineral indices (iron oxide + clay + ferrous proxy)
+        # so the frontend can render a grid that matches the legend exactly.
+        heatmap_grid = analysis.generate_heatmap_grid(
+            mineral_indices_result["iron_oxide"],
+            mineral_indices_result["clay"],
+            transform,
+            {
+                "lat_min": request.lat_min,
+                "lat_max": request.lat_max,
+                "lon_min": request.lon_min,
+                "lon_max": request.lon_max,
+            },
+            grid_size=50,
+        )
+
         # Step 8: Extract hotspot locations with coordinates
         # Convert pixel-based hotspots to geographic coordinates
         logger.info("Extracting hotspot coordinates...")
@@ -423,13 +448,14 @@ async def analyze_aoi(request: AOIRequest):
         response = AnalysisResponse(
             status="success",
             hotspots=all_hotspots,
-            copper_potential=geological_analysis['copper'],
-            gold_potential=geological_analysis['gold'],
-            minerals=geological_analysis['minerals'],
-            recommendations=geological_analysis['recommendations'],
+            copper_potential=geological_analysis["copper"],
+            gold_potential=geological_analysis["gold"],
+            minerals=geological_analysis["minerals"],
+            recommendations=geological_analysis["recommendations"],
             copper_heatmap=copper_heatmap,
             gold_heatmap=gold_heatmap,
-            heatmap_bounds=heatmap_bounds
+            heatmap_bounds=heatmap_bounds,
+            heatmap_grid=heatmap_grid,
         )
         
         logger.info("Analysis completed successfully")
