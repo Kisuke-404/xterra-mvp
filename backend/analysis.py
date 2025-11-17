@@ -361,6 +361,71 @@ def generate_gold_heatmap_grid(
 def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
     """
     Convert a 2D grid of values in [0, 1] to a coloured PNG heatmap (Base64).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if grid.ndim != 2:
+        raise ValueError("Heatmap grid must be a 2D array")
+
+    rows, cols = grid.shape
+    
+    # DEBUG: Log grid statistics
+    logger.info(f"[IMAGE DEBUG] Grid shape: {rows}x{cols}")
+    logger.info(f"[IMAGE DEBUG] Grid min: {np.min(grid):.4f}, max: {np.max(grid):.4f}")
+    logger.info(f"[IMAGE DEBUG] Grid non-zero: {np.count_nonzero(grid)}")
+
+    # Create a new RGB image with one pixel per grid cell
+    image = Image.new("RGB", (cols, rows))
+    
+    color_counts = {
+        "light_yellow": 0,
+        "yellow": 0,
+        "orange": 0,
+        "red": 0
+    }
+    
+    for i in range(rows):
+        for j in range(cols):
+            v = grid[i, j]
+            if not np.isfinite(v):
+                v = 0.0
+
+            # Clamp just in case
+            v = max(0.0, min(1.0, float(v)))
+
+            if v < 0.25:
+                color = (255, 255, 153)  # Light Yellow
+                color_counts["light_yellow"] += 1
+            elif v < 0.5:
+                color = (255, 255, 0)  # Yellow
+                color_counts["yellow"] += 1
+            elif v < 0.75:
+                color = (255, 165, 0)  # Orange
+                color_counts["orange"] += 1
+            else:
+                color = (255, 0, 0)  # Red
+                color_counts["red"] += 1
+
+            image.putpixel((j, i), color)
+    
+    logger.info(f"[IMAGE DEBUG] Color distribution: {color_counts}")
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    
+    png_size = len(buffer.getvalue())
+    logger.info(f"[IMAGE DEBUG] PNG file size: {png_size} bytes")
+
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    result = f"data:image/png;base64,{encoded}"
+    
+    logger.info(f"[IMAGE DEBUG] Final base64 string length: {len(result)} characters")
+    
+    return result
+    """
+    Convert a 2D grid of values in [0, 1] to a coloured PNG heatmap (Base64).
 
     Each cell in the grid becomes one pixel in a 50x50 image, coloured using
     the legend:
