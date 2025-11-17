@@ -14,13 +14,18 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import analysis router with graceful fallback if it is not available
+# Import routes
 try:
-    from routes.analyze import router as analyze_router
+    from backend.routes.analyze import router as analyze_router
     ANALYZE_AVAILABLE = True
-except ImportError as e:
-    print(f"Failed to import analyze router: {e}")
-    ANALYZE_AVAILABLE = False
-    analyze_router = None
+except ImportError:
+    try:
+        from routes.analyze import router as analyze_router
+        ANALYZE_AVAILABLE = True
+    except ImportError as e:
+        print(f"Failed to import analyze router: {e}")
+        ANALYZE_AVAILABLE = False
+        analyze_router = None
 
 
 @asynccontextmanager
