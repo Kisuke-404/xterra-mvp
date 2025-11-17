@@ -44,51 +44,62 @@ def generate_synthetic_data_at_coordinates(file_path):
     band3 = np.full((height, width), 2500, dtype="uint16")  # SWIR1
     band4 = np.full((height, width), 2000, dtype="uint16")  # SWIR2
 
-    # Create EXTREMELY strong signatures
-    # Add 15 MASSIVE iron oxide hotspots (very high band1, very low band4)
-    for _ in range(15):
-        y = np.random.randint(50, height - 100)
-        x = np.random.randint(50, width - 100)
-        size = np.random.randint(60, 100)
-
+    # Calculate which pixels correspond to user's typical AOI (40.97-40.99, -116.39 to -116.38)
+    user_aoi_lat_min, user_aoi_lat_max = 40.97, 40.99
+    user_aoi_lon_min, user_aoi_lon_max = -116.39, -116.38
+    
+    # Calculate pixel coordinates for user's AOI
+    lat_frac_min = (user_aoi_lat_min - lat_min) / (lat_max - lat_min)
+    lat_frac_max = (user_aoi_lat_max - lat_min) / (lat_max - lat_min)
+    lon_frac_min = (user_aoi_lon_min - lon_min) / (lon_max - lon_min)
+    lon_frac_max = (user_aoi_lon_max - lon_min) / (lon_max - lon_min)
+    
+    # Pixel ranges for user's AOI
+    aoi_y_min = int(height * (1 - lat_frac_max))
+    aoi_y_max = int(height * (1 - lat_frac_min))
+    aoi_x_min = int(width * lon_frac_min)
+    aoi_x_max = int(width * lon_frac_max)
+    
+    print(f"User AOI pixel range: y={aoi_y_min}-{aoi_y_max}, x={aoi_x_min}-{aoi_x_max}")
+    
+    # Add 20 STRONG iron oxide hotspots INSIDE user's AOI
+    for i in range(20):
+        y = np.random.randint(max(aoi_y_min - 20, 0), min(aoi_y_max + 20, height - 50))
+        x = np.random.randint(max(aoi_x_min - 20, 0), min(aoi_x_max + 20, width - 50))
+        size = np.random.randint(30, 60)
+        
         Y, X = np.ogrid[:size, :size]
         center = size // 2
         dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
         mask = np.maximum(1 - dist / (size / 2), 0)
-
-        # MUCH stronger signatures
-        band1[y : y + size, x : x + size] += (mask * 8000).astype("uint16")  # Massive iron oxide
-        band4[y : y + size, x : x + size] = np.maximum(
-            band4[y : y + size, x : x + size] - (mask * 1500).astype("uint16"),
-            300,
+        
+        y_end = min(y + size, height)
+        x_end = min(x + size, width)
+        actual_size_y = y_end - y
+        actual_size_x = x_end - x
+        
+        band1[y:y_end, x:x_end] += (mask[:actual_size_y, :actual_size_x] * 8000).astype('uint16')
+        band4[y:y_end, x:x_end] = np.maximum(
+            band4[y:y_end, x:x_end] - (mask[:actual_size_y, :actual_size_x] * 1500).astype('uint16'), 300
         )
-
-    # Add 15 MASSIVE clay hotspots (very high band3)
-    for _ in range(15):
-        y = np.random.randint(50, height - 100)
-        x = np.random.randint(50, width - 100)
-        size = np.random.randint(60, 100)
-
+    
+    # Add 20 STRONG clay hotspots INSIDE user's AOI
+    for i in range(20):
+        y = np.random.randint(max(aoi_y_min - 20, 0), min(aoi_y_max + 20, height - 50))
+        x = np.random.randint(max(aoi_x_min - 20, 0), min(aoi_x_max + 20, width - 50))
+        size = np.random.randint(30, 60)
+        
         Y, X = np.ogrid[:size, :size]
         center = size // 2
         dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
         mask = np.maximum(1 - dist / (size / 2), 0)
-
-        band3[y : y + size, x : x + size] += (mask * 10000).astype("uint16")  # Massive clay signature
-
-    # Add some K-feldspar signatures (high band2, moderate band3)
-    for _ in range(10):
-        y = np.random.randint(50, height - 100)
-        x = np.random.randint(50, width - 100)
-        size = np.random.randint(50, 90)
-
-        Y, X = np.ogrid[:size, :size]
-        center = size // 2
-        dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
-        mask = np.maximum(1 - dist / (size / 2), 0)
-
-        band2[y : y + size, x : x + size] += (mask * 6000).astype("uint16")
-        band3[y : y + size, x : x + size] += (mask * 3000).astype("uint16")
+        
+        y_end = min(y + size, height)
+        x_end = min(x + size, width)
+        actual_size_y = y_end - y
+        actual_size_x = x_end - x
+        
+        band3[y:y_end, x:x_end] += (mask[:actual_size_y, :actual_size_x] * 10000).astype('uint16')
 
     # Create transform
     transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
