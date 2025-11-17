@@ -44,34 +44,51 @@ def generate_synthetic_data_at_coordinates(file_path):
     band3 = np.full((height, width), 2500, dtype="uint16")  # SWIR1
     band4 = np.full((height, width), 2000, dtype="uint16")  # SWIR2
 
-    # Add 10 strong iron oxide hotspots
-    for _ in range(10):
+    # Create EXTREMELY strong signatures
+    # Add 15 MASSIVE iron oxide hotspots (very high band1, very low band4)
+    for _ in range(15):
         y = np.random.randint(50, height - 100)
         x = np.random.randint(50, width - 100)
-        size = np.random.randint(40, 80)
+        size = np.random.randint(60, 100)
 
         Y, X = np.ogrid[:size, :size]
         center = size // 2
         dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
         mask = np.maximum(1 - dist / (size / 2), 0)
 
-        band1[y : y + size, x : x + size] += (mask * 3000).astype("uint16")
+        # MUCH stronger signatures
+        band1[y : y + size, x : x + size] += (mask * 8000).astype("uint16")  # Massive iron oxide
         band4[y : y + size, x : x + size] = np.maximum(
-            band4[y : y + size, x : x + size] - (mask * 1000).astype("uint16"), 500
+            band4[y : y + size, x : x + size] - (mask * 1500).astype("uint16"),
+            300,
         )
 
-    # Add 10 strong clay hotspots
-    for _ in range(10):
+    # Add 15 MASSIVE clay hotspots (very high band3)
+    for _ in range(15):
         y = np.random.randint(50, height - 100)
         x = np.random.randint(50, width - 100)
-        size = np.random.randint(40, 80)
+        size = np.random.randint(60, 100)
 
         Y, X = np.ogrid[:size, :size]
         center = size // 2
         dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
         mask = np.maximum(1 - dist / (size / 2), 0)
 
-        band3[y : y + size, x : x + size] += (mask * 4000).astype("uint16")
+        band3[y : y + size, x : x + size] += (mask * 10000).astype("uint16")  # Massive clay signature
+
+    # Add some K-feldspar signatures (high band2, moderate band3)
+    for _ in range(10):
+        y = np.random.randint(50, height - 100)
+        x = np.random.randint(50, width - 100)
+        size = np.random.randint(50, 90)
+
+        Y, X = np.ogrid[:size, :size]
+        center = size // 2
+        dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
+        mask = np.maximum(1 - dist / (size / 2), 0)
+
+        band2[y : y + size, x : x + size] += (mask * 6000).astype("uint16")
+        band3[y : y + size, x : x + size] += (mask * 3000).astype("uint16")
 
     # Create transform
     transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
