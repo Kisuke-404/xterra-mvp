@@ -20,9 +20,7 @@ const CARLIN_TREND_COORDS = {
   longitude: -116.3848,
 }
 
-// ============================================================================
-// NEW: Haversine formula to calculate distance in km between two coordinates
-// ============================================================================
+// Haversine formula to calculate distance in km between two coordinates
 function getDistanceInKm(lon1: number, lat1: number, lon2: number, lat2: number): number {
   const R = 6371 // Earth's radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180
@@ -58,11 +56,9 @@ export default function Home() {
   const [goldHeatmap, setGoldHeatmap] = useState<string>("")
   const [heatmapBounds, setHeatmapBounds] = useState<any>(null)
 
-  // ============================================================================
-  // NEW: State for dimension display
-  // ============================================================================
   const [aoiDimensions, setAoiDimensions] = useState<{ size: number; isValid: boolean } | null>(null)
   const dimensionOverlayRef = useRef<any>(null)
+  const currentFeatureRef = useRef<any>(null) // Track current drawing feature
 
   useEffect(() => {
     // Load OpenLayers from CDN
@@ -94,7 +90,7 @@ export default function Home() {
       source: vectorSourceRef.current,
       style: new ol.style.Style({
         stroke: new ol.style.Stroke({
-          color: "#FFFFFF", // White by default
+          color: "#FFFFFF",
           width: 2,
         }),
         fill: new ol.style.Fill({
@@ -132,14 +128,12 @@ export default function Home() {
     })
   }
 
-  // ============================================================================
-  // NEW: Updated handleDrawAOI with square constraints and dimension display
-  // ============================================================================
   const handleDrawAOI = () => {
     const ol = (window as any).ol
     const map = mapRef.current
 
     if (isDrawingMode) {
+      // Exit drawing mode
       if (drawInteractionRef.current) {
         map.removeInteraction(drawInteractionRef.current)
         drawInteractionRef.current = null
@@ -150,9 +144,29 @@ export default function Home() {
       }
       setIsDrawingMode(false)
       setAoiDimensions(null)
+      
+      // Remove cursor style
+      if (mapContainer.current) {
+        mapContainer.current.style.cursor = ""
+      }
     } else {
-      // Clear existing features
-      vectorSourceRef.current.clear()
+      // Enter drawing mode
+      
+      // DON'T clear existing features (keep search markers!)
+      // Only remove previous AOI boxes
+      const features = vectorSourceRef.current.getFeatures()
+      features.forEach((feature: any) => {
+        const geom = feature.getGeometry()
+        // Remove polygons (AOI boxes) but keep points (search markers)
+        if (geom.getType() === "Polygon") {
+          vectorSourceRef.current.removeFeature(feature)
+        }
+      })
+
+      // Set crosshair cursor
+      if (mapContainer.current) {
+        mapContainer.current.style.cursor = "crosshair"
+      }
 
       // Create dimension overlay element
       const overlayElement = document.createElement("div")
@@ -177,33 +191,28 @@ export default function Home() {
       map.addOverlay(dimensionOverlay)
       dimensionOverlayRef.current = dimensionOverlay
 
-      // Custom geometry function that forces SQUARE shape with 5-50km limits
+      // Custom geometry function that forces SQUARE shape with 500m-2km limits
       const createSquareWithLimits = function (coordinates: any, geometry: any) {
         const ol = (window as any).ol
         const start = coordinates[0]
         const end = coordinates[1]
 
-        // Convert to lat/lon for distance calculation
         const [startLon, startLat] = ol.proj.transform(start, "EPSG:3857", "EPSG:4326")
         const [endLon, endLat] = ol.proj.transform(end, "EPSG:3857", "EPSG:4326")
 
-        // Calculate width and height in km
         const widthKm = getDistanceInKm(startLon, startLat, endLon, startLat)
         const heightKm = getDistanceInKm(startLon, startLat, startLon, endLat)
 
-        // Use the larger dimension to create a square
         let sizeKm = Math.max(widthKm, heightKm)
 
-        // HARD LIMIT: Clamp to 5-50km
-        const MIN_KM = 5
-        const MAX_KM = 50
+        // HARD LIMIT: 500m to 2km (0.5km to 2km)
+        const MIN_KM = 0.5
+        const MAX_KM = 2
         sizeKm = Math.max(MIN_KM, Math.min(MAX_KM, sizeKm))
 
-        // Check if valid (5-50km)
         const isValid = sizeKm >= MIN_KM && sizeKm <= MAX_KM
 
-        // Calculate new end point to make it square
-        const kmPerDegreeLat = 111.32 // Approximate
+        const kmPerDegreeLat = 111.32
         const kmPerDegreeLon = kmPerDegreeLat * Math.cos((startLat * Math.PI) / 180)
 
         const deltaLat = (sizeKm / kmPerDegreeLat) * (endLat > startLat ? 1 : -1)
@@ -214,7 +223,6 @@ export default function Home() {
 
         const newEnd = ol.proj.fromLonLat([newEndLon, newEndLat])
 
-        // Create square coordinates
         const squareCoords = [
           start,
           [newEnd[0], start[1]],
@@ -226,13 +234,13 @@ export default function Home() {
         // Update dimension display
         setAoiDimensions({ size: sizeKm, isValid })
 
-        // Update overlay position and content
-        overlayElement.textContent = `${sizeKm.toFixed(1)}km × ${sizeKm.toFixed(1)}km`
+        // Update overlay
+        const sizeMeter = sizeKm >= 1 ? `${sizeKm.toFixed(1)}km` : `${(sizeKm * 1000).toFixed(0)}m`
+        overlayElement.textContent = `${sizeMeter} × ${sizeMeter}`
         overlayElement.style.color = isValid ? "white" : "red"
         overlayElement.style.borderColor = isValid ? "white" : "red"
         dimensionOverlay.setPosition(newEnd)
 
-        // Create or update geometry
         if (!geometry) {
           geometry = new ol.geom.Polygon([squareCoords])
         } else {
@@ -247,15 +255,39 @@ export default function Home() {
         type: "Circle",
         geometryFunction: createSquareWithLimits,
         style: function (feature: any) {
-          const dims = aoiDimensions
-          const isValid = dims ? dims.isValid : true
+          const geom = feature.getGeometry()
+          
+          // Calculate size from geometry to check validity
+          let isValid = true
+          if (geom && geom.getType() === "Polygon") {
+            const coords = geom.getCoordinates()[0]
+            if (coords.length >= 5) {
+              const [lon1, lat1] = ol.proj.transform(coords[0], "EPSG:3857", "EPSG:4326")
+              const [lon2, lat2] = ol.proj.transform(coords[2], "EPSG:3857", "EPSG:4326")
+              const sizeKm = getDistanceInKm(lon1, lat1, lon2, lat2) / Math.sqrt(2)
+              isValid = sizeKm >= 0.5 && sizeKm <= 2
+            }
+          }
+          
           return new ol.style.Style({
             stroke: new ol.style.Stroke({
               color: isValid ? "#FFFFFF" : "#FF0000",
-              width: 2,
+              width: 3,
+              lineDash: [10, 5], // Dashed line while drawing
             }),
             fill: new ol.style.Fill({
-              color: isValid ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 0, 0, 0.1)",
+              color: isValid ? "rgba(255, 255, 255, 0.15)" : "rgba(255, 0, 0, 0.15)",
+            }),
+            // Add vertex circles so user can see the drawing points
+            image: new ol.style.Circle({
+              radius: 5,
+              fill: new ol.style.Fill({
+                color: isValid ? "#FFFFFF" : "#FF0000",
+              }),
+              stroke: new ol.style.Stroke({
+                color: "#000000",
+                width: 2,
+              }),
             }),
           })
         },
@@ -265,18 +297,28 @@ export default function Home() {
       drawInteractionRef.current = draw
       setIsDrawingMode(true)
 
+      draw.on("drawstart", (evt: any) => {
+        console.log("[v0] Drawing started")
+        currentFeatureRef.current = evt.feature
+      })
+
       draw.on("drawend", (evt: any) => {
         const geometry = evt.feature.getGeometry()
-        const dims = aoiDimensions
+        const coords = geometry.getCoordinates()[0]
+        
+        // Calculate actual size from final geometry
+        const [lon1, lat1] = ol.proj.transform(coords[0], "EPSG:3857", "EPSG:4326")
+        const [lon2, lat2] = ol.proj.transform(coords[2], "EPSG:3857", "EPSG:4326")
+        const sizeKm = getDistanceInKm(lon1, lat1, lon2, lat2) / Math.sqrt(2)
+        
+        const MIN_KM = 0.5
+        const MAX_KM = 2
+        const isValid = sizeKm >= MIN_KM && sizeKm <= MAX_KM
 
-        // Only proceed if valid size
-        if (dims && dims.isValid) {
-          console.log("[v0] AOI drawn:", geometry, `Size: ${dims.size.toFixed(1)}km`)
-          setDrawnAOI(geometry)
-          setDataSelectOpen(true)
-          setActiveStage("data")
+        console.log(`[v0] AOI drawn - Size: ${sizeKm.toFixed(2)}km, Valid: ${isValid}`)
 
-          // Update feature style to white
+        if (isValid) {
+          // Valid AOI - update style to solid white
           evt.feature.setStyle(
             new ol.style.Style({
               stroke: new ol.style.Stroke({
@@ -288,22 +330,37 @@ export default function Home() {
               }),
             })
           )
+          
+          setDrawnAOI(geometry)
+          
+          // AUTO-PROGRESS WORKFLOW
+          setDataSelectOpen(true)
+          setActiveStage("data")
+          
+          console.log("[v0] ✓ Valid AOI - Auto-opening data selector")
         } else {
-          // Remove invalid AOI
+          // Invalid AOI - remove it
           vectorSourceRef.current.removeFeature(evt.feature)
-          alert("AOI must be between 5km × 5km and 50km × 50km")
+          const sizeText = sizeKm >= 1 ? `${sizeKm.toFixed(1)}km` : `${(sizeKm * 1000).toFixed(0)}m`
+          alert(`AOI must be between 500m × 500m and 2km × 2km\nYour AOI: ${sizeText} × ${sizeText}`)
         }
 
+        // Cleanup
         setIsDrawingMode(false)
         map.removeInteraction(draw)
         drawInteractionRef.current = null
+        currentFeatureRef.current = null
 
-        // Remove overlay
         if (dimensionOverlayRef.current) {
           map.removeOverlay(dimensionOverlayRef.current)
           dimensionOverlayRef.current = null
         }
         setAoiDimensions(null)
+        
+        // Reset cursor
+        if (mapContainer.current) {
+          mapContainer.current.style.cursor = ""
+        }
       })
     }
   }
@@ -345,7 +402,14 @@ export default function Home() {
         duration: 500,
       })
       
-      vectorSourceRef.current.clear()
+      // Clear only previous search markers (points), keep AOI boxes
+      const features = vectorSourceRef.current.getFeatures()
+      features.forEach((feature: any) => {
+        const geom = feature.getGeometry()
+        if (geom.getType() === "Point") {
+          vectorSourceRef.current.removeFeature(feature)
+        }
+      })
       
       const markerFeature = new ol.Feature({
         geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
@@ -367,6 +431,8 @@ export default function Home() {
 
   const handleRunModel = async (filters: any) => {
     console.log("[v0] Running model with filters:", filters)
+    
+    // AUTO-PROGRESS: Close data selector, open insights
     setDataSelectOpen(false)
     setInsightsOpen(true)
     setActiveStage("insights")
@@ -398,6 +464,7 @@ export default function Home() {
       console.error("[v0] Error calling backend:", error)
     }
     
+    // AUTO-PROGRESS: Show hotspots after insights load
     setTimeout(() => {
       setHotspotsVisible(true)
     }, 5000)
@@ -412,6 +479,17 @@ export default function Home() {
       return (
         <>
           <div ref={mapContainer} className="w-full h-full" />
+
+          {/* Drawing Mode Indicator */}
+          {isDrawingMode && (
+            <div className="absolute top-24 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-2xl border-2 border-blue-400 z-50 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-white rounded-full"></div>
+                <span className="font-bold text-lg">Drawing Mode Active</span>
+                <span className="text-sm opacity-80">Click and drag to draw square AOI</span>
+              </div>
+            </div>
+          )}
 
           <Heatmap
             isVisible={hotspotsVisible && copperHeatmap !== ""}
