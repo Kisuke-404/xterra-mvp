@@ -42,15 +42,27 @@ def download_carlin_data() -> None:
         # Create synthetic 4-band image (500x500 pixels)
         height, width = 500, 500
 
-        # Generate realistic-looking data with some hotspots
+        # Generate realistic bands with mineral signatures
+        np.random.seed(42)  # For reproducibility
         band1 = np.random.randint(1000, 3000, (height, width), dtype='uint16')  # Red
         band2 = np.random.randint(2000, 4000, (height, width), dtype='uint16')  # NIR
         band3 = np.random.randint(1500, 3500, (height, width), dtype='uint16')  # SWIR1
         band4 = np.random.randint(1000, 3000, (height, width), dtype='uint16')  # SWIR2
 
-        # Add some hotspot signatures
-        band1[200:250, 200:250] += 1000  # Iron oxide signature
-        band3[300:350, 300:350] += 1500  # Clay signature
+        # Add multiple strong hotspot areas (iron oxide signature)
+        for _ in range(5):
+            y = np.random.randint(50, height - 50)
+            x = np.random.randint(50, width - 50)
+            size = 30
+            band1[y : y + size, x : x + size] += np.random.randint(800, 1500)  # Iron oxide
+            band4[y : y + size, x : x + size] += np.random.randint(500, 1000)  # Ferrous
+
+        # Add clay mineral hotspots
+        for _ in range(5):
+            y = np.random.randint(50, height - 50)
+            x = np.random.randint(50, width - 50)
+            size = 25
+            band3[y : y + size, x : x + size] += np.random.randint(1000, 2000)  # Clay signature
 
         # Create transform
         transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
