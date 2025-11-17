@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 # Import routes
 try:
-    from routes import analyze
+    from .routes import analyze
 except ImportError:
     analyze = None
 
