@@ -22,7 +22,7 @@ def download_carlin_data() -> None:
     automatically fetch the required raster data into /app/data.
     """
 
-    file_path = "/app/data/carlin_s2.tif"
+    file_path = "/app/backend/data/carlin_s2.tif"
 
     # Create data directory if it doesn't exist
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
