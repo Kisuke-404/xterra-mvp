@@ -361,6 +361,15 @@ def generate_gold_heatmap_grid(
 def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
     """
     Convert a 2D grid of values in [0, 1] to a coloured PNG heatmap (Base64).
+
+    Each cell in the grid becomes one pixel in a 50x50 image, coloured using
+    the legend:
+      - 0.0–0.25  → Light Yellow (255, 255, 153)
+      - 0.25–0.5  → Yellow      (255, 255,   0)
+      - 0.5–0.75  → Orange      (255, 165,   0)
+      - 0.75–1.0  → Red         (255,   0,   0)
+
+    FIXED: Returns ONLY base64 string (no data URL prefix) to avoid double prefix bug.
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -419,57 +428,11 @@ def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
     logger.info(f"[IMAGE DEBUG] PNG file size: {png_size} bytes")
 
     encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    result = f"data:image/png;base64,{encoded}"
     
-    logger.info(f"[IMAGE DEBUG] Final base64 string length: {len(result)} characters")
+    logger.info(f"[IMAGE DEBUG] Final base64 string length: {len(encoded)} characters")
     
-    return result
-    """
-    Convert a 2D grid of values in [0, 1] to a coloured PNG heatmap (Base64).
-
-    Each cell in the grid becomes one pixel in a 50x50 image, coloured using
-    the legend:
-      - 0.0–0.25  → Light Yellow (255, 255, 153)
-      - 0.25–0.5  → Yellow      (255, 255,   0)
-      - 0.5–0.75  → Orange      (255, 165,   0)
-      - 0.75–1.0  → Red         (255,   0,   0)
-
-    The returned string is a data URL: "data:image/png;base64,<...>".
-    """
-
-    if grid.ndim != 2:
-        raise ValueError("Heatmap grid must be a 2D array")
-
-    rows, cols = grid.shape
-
-    # Create a new RGB image with one pixel per grid cell
-    image = Image.new("RGB", (cols, rows))
-    for i in range(rows):
-        for j in range(cols):
-            v = grid[i, j]
-            if not np.isfinite(v):
-                v = 0.0
-
-            # Clamp just in case
-            v = max(0.0, min(1.0, float(v)))
-
-            if v < 0.25:
-                color = (255, 255, 153)  # Light Yellow
-            elif v < 0.5:
-                color = (255, 255, 0)  # Yellow
-            elif v < 0.75:
-                color = (255, 165, 0)  # Orange
-            else:
-                color = (255, 0, 0)  # Red
-
-            image.putpixel((j, i), color)
-
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    buffer.seek(0)
-
-    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return f"data:image/png;base64,{encoded}"
+    # FIXED: Return ONLY base64 string, frontend will add data URL prefix
+    return encoded
 
 
 def format_analysis_report(analysis: Dict[str, Any]) -> str:
