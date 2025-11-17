@@ -135,7 +135,7 @@ def generate_heatmap_grid(
 
     This function:
     - Creates a grid of `grid_size x grid_size` cells over the AOI.
-    - Samples the underlying mineral indices at the centre of each cell.
+    - Aggregates the underlying mineral indices using MAX for each cell.
     - Combines iron oxide, clay and a simple "ferrous" proxy into a
       single mineral potential score.
     - Normalises the final values to the 0–1 range.
@@ -148,24 +148,11 @@ def generate_heatmap_grid(
     iron = np.nan_to_num(iron_oxide_index.astype("float32"), nan=0.0)
     clay = np.nan_to_num(clay_index.astype("float32"), nan=0.0)
 
-    # Normalise each index to 0–1 based on its own distribution
-    def _safe_normalise(arr: np.ndarray) -> np.ndarray:
-        arr_min = float(np.nanmin(arr))
-        arr_max = float(np.nanmax(arr))
-        if arr_max <= arr_min:
-            return np.zeros_like(arr, dtype="float32")
-        return (arr - arr_min) / (arr_max - arr_min)
+    # Simple proxy for "ferrous" behaviour
+    ferrous = iron.copy()
 
-    iron_norm = _safe_normalise(iron)
-    clay_norm = _safe_normalise(clay)
-
-    # Simple proxy for "ferrous" behaviour:
-    # here we reuse the iron signal as a stand‑in, but kept as a separate
-    # component so we can adjust the formula later without touching callers.
-    ferrous_norm = iron_norm.copy()
-
-    # Combined mineral potential index in 0–1 range
-    combined_index = (iron_norm + clay_norm + ferrous_norm) / 3.0
+    # Combined mineral potential index
+    combined_index = (iron + clay + ferrous) / 3.0
 
     lat_min = bounds["lat_min"]
     lat_max = bounds["lat_max"]
@@ -182,37 +169,52 @@ def generate_heatmap_grid(
 
     height, width = combined_index.shape
 
+    # FIXED: Aggregate over cell regions instead of point sampling
     for i in range(rows):
-        # Sample latitude at the centre of the cell (from north to south)
-        sample_lat = lat_max - (i + 0.5) * lat_step
+        cell_lat_max = lat_max - i * lat_step
+        cell_lat_min = lat_max - (i + 1) * lat_step
+        
         for j in range(cols):
-            # Sample longitude at the centre of the cell (from west to east)
-            sample_lon = lon_min + (j + 0.5) * lon_step
+            cell_lon_min = lon_min + j * lon_step
+            cell_lon_max = lon_min + (j + 1) * lon_step
 
             try:
-                # Convert geographic coordinate back to raster row/col
-                r, c = rowcol(transform, sample_lon, sample_lat)
+                # Get pixel bounds for this cell
+                r_min, c_min = rowcol(transform, cell_lon_min, cell_lat_max)
+                r_max, c_max = rowcol(transform, cell_lon_max, cell_lat_min)
+                
+                # Ensure proper ordering
+                r_min, r_max = min(r_min, r_max), max(r_min, r_max)
+                c_min, c_max = min(c_min, c_max), max(c_min, c_max)
+                
+                # Clamp to raster bounds
+                r_min = max(0, r_min)
+                r_max = min(height, r_max + 1)
+                c_min = max(0, c_min)
+                c_max = min(width, c_max + 1)
+                
+                # Extract cell region and take MAX value
+                if r_min < r_max and c_min < c_max:
+                    cell_region = combined_index[r_min:r_max, c_min:c_max]
+                    if cell_region.size > 0:
+                        grid[i, j] = float(np.nanmax(cell_region))
+                    else:
+                        grid[i, j] = 0.0
+                else:
+                    grid[i, j] = 0.0
+                    
             except Exception:
-                # If anything goes wrong, fall back to zero potential
-                grid[i, j] = 0.0
-                continue
-
-            # Clamp indices to the valid raster bounds
-            if 0 <= r < height and 0 <= c < width:
-                grid[i, j] = float(combined_index[r, c])
-            else:
                 grid[i, j] = 0.0
 
-    # Final normalisation of the grid to strict 0–1 range, so the
-    # frontend can interpret colours consistently.
-    finite_mask = np.isfinite(grid)
+    # Final normalisation to 0–1 range
+    finite_mask = np.isfinite(grid) & (grid > 0)
     if finite_mask.any():
         g_min = float(grid[finite_mask].min())
         g_max = float(grid[finite_mask].max())
         if g_max > g_min:
             grid[finite_mask] = (grid[finite_mask] - g_min) / (g_max - g_min)
         else:
-            grid[finite_mask] = 0.0
+            grid[finite_mask] = 1.0  # If all values equal, set to max
     else:
         grid[:, :] = 0.0
 
@@ -243,22 +245,12 @@ def _generate_single_index_grid(
     grid_size: int = 50,
 ) -> np.ndarray:
     """
-    Helper: sample a single mineral index onto a regular 2D grid.
-
-    This keeps the sampling logic (from geographic space back to
-    raster pixels) in one place so we can reuse it for different
-    mineral combinations (copper vs gold, etc.).
+    Helper: sample a single mineral index onto a regular 2D grid using MAX aggregation.
+    
+    FIXED: Now aggregates over cell regions instead of point sampling!
     """
 
     index = np.nan_to_num(index_array.astype("float32"), nan=0.0)
-
-    # Normalise to 0–1 range based on the distribution of this index.
-    idx_min = float(np.nanmin(index))
-    idx_max = float(np.nanmax(index))
-    if idx_max > idx_min:
-        index_norm = (index - idx_min) / (idx_max - idx_min)
-    else:
-        index_norm = np.zeros_like(index, dtype="float32")
 
     lat_min = bounds["lat_min"]
     lat_max = bounds["lat_max"]
@@ -272,33 +264,54 @@ def _generate_single_index_grid(
     lat_step = (lat_max - lat_min) / rows
     lon_step = (lon_max - lon_min) / cols
 
-    height, width = index_norm.shape
+    height, width = index.shape
 
+    # FIXED: Aggregate over cell regions
     for i in range(rows):
-        sample_lat = lat_max - (i + 0.5) * lat_step
+        cell_lat_max = lat_max - i * lat_step
+        cell_lat_min = lat_max - (i + 1) * lat_step
+        
         for j in range(cols):
-            sample_lon = lon_min + (j + 0.5) * lon_step
+            cell_lon_min = lon_min + j * lon_step
+            cell_lon_max = lon_min + (j + 1) * lon_step
 
             try:
-                r, c = rowcol(transform, sample_lon, sample_lat)
+                # Get pixel bounds for this cell
+                r_min, c_min = rowcol(transform, cell_lon_min, cell_lat_max)
+                r_max, c_max = rowcol(transform, cell_lon_max, cell_lat_min)
+                
+                # Ensure proper ordering
+                r_min, r_max = min(r_min, r_max), max(r_min, r_max)
+                c_min, c_max = min(c_min, c_max), max(c_min, c_max)
+                
+                # Clamp to raster bounds
+                r_min = max(0, r_min)
+                r_max = min(height, r_max + 1)
+                c_min = max(0, c_min)
+                c_max = min(width, c_max + 1)
+                
+                # Extract cell region and take MAX value
+                if r_min < r_max and c_min < c_max:
+                    cell_region = index[r_min:r_max, c_min:c_max]
+                    if cell_region.size > 0:
+                        grid[i, j] = float(np.nanmax(cell_region))
+                    else:
+                        grid[i, j] = 0.0
+                else:
+                    grid[i, j] = 0.0
+                    
             except Exception:
                 grid[i, j] = 0.0
-                continue
 
-            if 0 <= r < height and 0 <= c < width:
-                grid[i, j] = float(index_norm[r, c])
-            else:
-                grid[i, j] = 0.0
-
-    # Ensure strict 0–1 range
-    finite_mask = np.isfinite(grid)
+    # Normalize to 0–1 range
+    finite_mask = np.isfinite(grid) & (grid > 0)
     if finite_mask.any():
         g_min = float(grid[finite_mask].min())
         g_max = float(grid[finite_mask].max())
         if g_max > g_min:
             grid[finite_mask] = (grid[finite_mask] - g_min) / (g_max - g_min)
         else:
-            grid[finite_mask] = 0.0
+            grid[finite_mask] = 1.0
     else:
         grid[:, :] = 0.0
 
@@ -313,26 +326,13 @@ def generate_copper_heatmap_grid(
 ) -> np.ndarray:
     """
     Generate a 2D potential grid for copper, based on iron oxide + ferrous minerals.
-
-    For now we treat the ferrous component as a proxy derived from the
-    iron oxide signal, which keeps the implementation simple while
-    still reflecting "more iron → more ferrous behaviour".
     """
 
     iron = np.nan_to_num(iron_oxide_index.astype("float32"), nan=0.0)
+    ferrous = iron.copy()
 
-    # Normalise iron once, then re-use it both as iron and "ferrous" proxy.
-    idx_min = float(np.nanmin(iron))
-    idx_max = float(np.nanmax(iron))
-    if idx_max > idx_min:
-        iron_norm = (iron - idx_min) / (idx_max - idx_min)
-    else:
-        iron_norm = np.zeros_like(iron, dtype="float32")
-
-    ferrous_norm = iron_norm.copy()
-
-    # Combined copper potential index in 0–1 range
-    combined = (iron_norm + ferrous_norm) / 2.0
+    # Combined copper potential index
+    combined = (iron + ferrous) / 2.0
 
     return _generate_single_index_grid(combined, transform, bounds, grid_size)
 
@@ -345,9 +345,6 @@ def generate_gold_heatmap_grid(
 ) -> np.ndarray:
     """
     Generate a 2D potential grid for gold, based purely on clay minerals.
-
-    Clay‑rich zones are a key signal for epithermal and distal porphyry
-    environments, so we use the clay index directly here.
     """
 
     return _generate_single_index_grid(clay_index, transform, bounds, grid_size)
