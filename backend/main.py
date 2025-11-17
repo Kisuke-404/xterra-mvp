@@ -42,27 +42,44 @@ def download_carlin_data() -> None:
         # Create synthetic 4-band image (500x500 pixels)
         height, width = 500, 500
 
-        # Generate realistic bands with mineral signatures
-        np.random.seed(42)  # For reproducibility
-        band1 = np.random.randint(1000, 3000, (height, width), dtype='uint16')  # Red
-        band2 = np.random.randint(2000, 4000, (height, width), dtype='uint16')  # NIR
-        band3 = np.random.randint(1500, 3500, (height, width), dtype='uint16')  # SWIR1
-        band4 = np.random.randint(1000, 3000, (height, width), dtype='uint16')  # SWIR2
+        # Set random seed for reproducibility
+        np.random.seed(42)
 
-        # Add multiple strong hotspot areas (iron oxide signature)
-        for _ in range(5):
-            y = np.random.randint(50, height - 50)
-            x = np.random.randint(50, width - 50)
-            size = 30
-            band1[y : y + size, x : x + size] += np.random.randint(800, 1500)  # Iron oxide
-            band4[y : y + size, x : x + size] += np.random.randint(500, 1000)  # Ferrous
+        # Create base bands with realistic satellite values
+        band1 = np.full((height, width), 2000, dtype="uint16")  # Red baseline
+        band2 = np.full((height, width), 3000, dtype="uint16")  # NIR baseline
+        band3 = np.full((height, width), 2500, dtype="uint16")  # SWIR1 baseline
+        band4 = np.full((height, width), 2000, dtype="uint16")  # SWIR2 baseline
 
-        # Add clay mineral hotspots
-        for _ in range(5):
-            y = np.random.randint(50, height - 50)
-            x = np.random.randint(50, width - 50)
-            size = 25
-            band3[y : y + size, x : x + size] += np.random.randint(1000, 2000)  # Clay signature
+        # Add 10 STRONG iron oxide hotspots (high band1, low band4)
+        for _ in range(10):
+            y = np.random.randint(50, height - 100)
+            x = np.random.randint(50, width - 100)
+            size = np.random.randint(40, 80)
+
+            # Create gradient effect
+            Y, X = np.ogrid[:size, :size]
+            center = size // 2
+            dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
+            mask = np.maximum(1 - dist / (size / 2), 0)
+
+            band1[y : y + size, x : x + size] += (mask * 3000).astype("uint16")  # VERY high iron oxide
+            band4[y : y + size, x : x + size] = np.maximum(
+                band4[y : y + size, x : x + size] - (mask * 1000).astype("uint16"), 500
+            )
+
+        # Add 10 STRONG clay hotspots (high band3)
+        for _ in range(10):
+            y = np.random.randint(50, height - 100)
+            x = np.random.randint(50, width - 100)
+            size = np.random.randint(40, 80)
+
+            Y, X = np.ogrid[:size, :size]
+            center = size // 2
+            dist = np.sqrt((Y - center) ** 2 + (X - center) ** 2)
+            mask = np.maximum(1 - dist / (size / 2), 0)
+
+            band3[y : y + size, x : x + size] += (mask * 4000).astype("uint16")  # VERY high clay
 
         # Create transform
         transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
