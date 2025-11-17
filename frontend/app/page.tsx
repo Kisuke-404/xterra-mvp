@@ -58,7 +58,7 @@ export default function Home() {
 
   const [aoiDimensions, setAoiDimensions] = useState<{ size: number; isValid: boolean } | null>(null)
   const dimensionOverlayRef = useRef<any>(null)
-  const currentFeatureRef = useRef<any>(null) // Track current drawing feature
+  const currentFeatureRef = useRef<any>(null)
 
   useEffect(() => {
     // Load OpenLayers from CDN
@@ -333,6 +333,29 @@ export default function Home() {
           
           setDrawnAOI(geometry)
           
+          // EXTRACT REAL BOUNDS FROM GEOMETRY
+          const extent = geometry.getExtent()
+          const bottomLeft = ol.proj.transform(
+            [extent[0], extent[1]], 
+            "EPSG:3857", 
+            "EPSG:4326"
+          )
+          const topRight = ol.proj.transform(
+            [extent[2], extent[3]], 
+            "EPSG:3857", 
+            "EPSG:4326"
+          )
+
+          const realBounds = {
+            lat_min: bottomLeft[1],
+            lat_max: topRight[1],
+            lon_min: bottomLeft[0],
+            lon_max: topRight[0],
+          }
+
+          console.log("[v0] Real AOI bounds:", realBounds)
+          setHeatmapBounds(realBounds)
+          
           // AUTO-PROGRESS WORKFLOW
           setDataSelectOpen(true)
           setActiveStage("data")
@@ -440,15 +463,21 @@ export default function Home() {
     
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+      
+      // USE REAL BOUNDS from drawn AOI
+      const bounds = heatmapBounds || { 
+        lat_min: 40.97, 
+        lat_max: 40.99, 
+        lon_min: -116.39, 
+        lon_max: -116.38 
+      }
+      
+      console.log("[v0] Sending bounds to backend:", bounds)
+      
       const response = await fetch(`${backendUrl}/analyze/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lat_min: drawnAOI ? 40.97 : 40.97,
-          lat_max: drawnAOI ? 40.99 : 40.99,
-          lon_min: drawnAOI ? -116.39 : -116.39,
-          lon_max: drawnAOI ? -116.38 : -116.38,
-        }),
+        body: JSON.stringify(bounds),
       })
       
       if (!response.ok) throw new Error("Analysis failed")
@@ -480,14 +509,11 @@ export default function Home() {
         <>
           <div ref={mapContainer} className="w-full h-full" />
 
-          {/* Drawing Mode Indicator */}
+          {/* FIXED: Small Drawing Mode Indicator */}
           {isDrawingMode && (
-            <div className="absolute top-24 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-2xl border-2 border-blue-400 z-50 animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-white rounded-full"></div>
-                <span className="font-bold text-lg">Drawing Mode Active</span>
-                <span className="text-sm opacity-80">Click and drag to draw square AOI</span>
-              </div>
+            <div className="absolute top-20 left-4 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold z-50 flex items-center gap-2 shadow-lg">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              Drawing AOI
             </div>
           )}
 
