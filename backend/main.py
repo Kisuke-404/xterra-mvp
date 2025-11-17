@@ -9,9 +9,48 @@ import uvicorn
 from contextlib import asynccontextmanager
 import sys
 import os
+import requests
 
 # Ensure backend package is on the Python path so we can import routes reliably
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+def download_carlin_data() -> None:
+    """Download carlin_s2.tif from Google Drive if it is not already available.
+
+    This runs at application startup so that deployments (e.g. on Railway)
+    automatically fetch the required raster data into /app/data.
+    """
+
+    file_path = "/app/data/carlin_s2.tif"
+
+    # Create data directory if it doesn't exist
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # Check if file already exists
+    if os.path.exists(file_path):
+        print(f"✓ Carlin data file already exists at {file_path}")
+        return
+
+    print("Downloading carlin_s2.tif from Google Drive...")
+    file_id = "1OuwOtp55u3_JHR2xIofvJkJz1mLhW6ns"
+    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+    try:
+        response = requests.get(download_url, stream=True, timeout=60)
+        response.raise_for_status()
+
+        with open(file_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:  # Filter out keep-alive chunks
+                    f.write(chunk)
+
+        print(f"✓ Downloaded carlin_s2.tif successfully to {file_path}")
+    except Exception as e:
+        # Log but do not crash the app – analysis endpoints can then
+        # report a more specific error when they try to use the file.
+        print(f"✗ Error downloading file: {e}")
+
 
 # Import analysis router with graceful fallback if it is not available
 # Import routes
@@ -31,8 +70,13 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager for startup and shutdown events
+    Lifespan context manager for startup and shutdown events.
+
+    On startup we ensure the Carlin satellite data is present by
+    downloading it from Google Drive if needed.
     """
+
+    download_carlin_data()
     yield
 
 
