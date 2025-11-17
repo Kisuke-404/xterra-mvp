@@ -23,22 +23,33 @@ def download_carlin_data() -> None:
     # Create data directory if it doesn't exist
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-    # Check if file already exists
-    if os.path.exists(file_path):
+    # Check if file already exists and is valid (size > 1MB)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 1_000_000:
         print(f"✓ Carlin data file already exists at {file_path}")
         return
 
     print("Downloading carlin_s2.tif from Google Drive (this may take 2-3 minutes)...")
-    file_id = "1OuwOtp55u3_JHR2xIofvJkJz1mLhW6ns"
-    url = f"https://drive.google.com/uc?id={file_id}"
+
+    # Use full Google Drive URL with gdown fuzzy mode
+    url = "https://drive.google.com/file/d/1OuwOtp55u3_JHR2xIofvJkJz1mLhW6ns/view?usp=sharing"
 
     try:
-        gdown.download(url, file_path, quiet=False)
-        print(f"✓ Downloaded carlin_s2.tif successfully to {file_path}")
+        # Use fuzzy=True to handle large files and permission issues
+        gdown.download(url, file_path, quiet=False, fuzzy=True)
+
+        # Verify file was downloaded and is valid
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 1_000_000:
+            print(f"✓ Downloaded carlin_s2.tif successfully ({os.path.getsize(file_path)} bytes)")
+        else:
+            print("✗ Download failed or file is too small")
+            if os.path.exists(file_path):
+                os.remove(file_path)
     except Exception as e:
         # Log but do not crash the app – analysis endpoints can then
         # report a more specific error when they try to use the file.
         print(f"✗ Error downloading file: {e}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
 # Import analysis router with graceful fallback if it is not available
