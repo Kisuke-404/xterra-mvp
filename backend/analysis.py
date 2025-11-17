@@ -305,6 +305,10 @@ def _generate_single_index_grid(
 
     # Normalize to 0–1 range
     finite_mask = np.isfinite(grid) & (grid > 0)
+    
+    # DEBUG LOGGING
+    print(f"[HEATMAP DEBUG] Grid before normalization - Min: {np.min(grid):.4f}, Max: {np.max(grid):.4f}, Non-zero count: {np.count_nonzero(grid)}")
+    
     if finite_mask.any():
         g_min = float(grid[finite_mask].min())
         g_max = float(grid[finite_mask].max())
@@ -314,7 +318,11 @@ def _generate_single_index_grid(
             grid[finite_mask] = 1.0
     else:
         grid[:, :] = 0.0
+        print("[HEATMAP DEBUG] WARNING: All grid values are zero!")
 
+    # DEBUG LOGGING AFTER
+    print(f"[HEATMAP DEBUG] Grid after normalization - Min: {np.min(grid):.4f}, Max: {np.max(grid):.4f}, Non-zero count: {np.count_nonzero(grid)}")
+    
     return grid
 
 
