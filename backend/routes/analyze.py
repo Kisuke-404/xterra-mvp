@@ -384,36 +384,43 @@ async def analyze_aoi(request: AOIRequest):
             mineral_indices_result['silica']
         )
         
-        # Step 7: Generate heatmap images
-        # Convert score arrays to Base64 encoded PNG images with legend colors
-        logger.info("Generating heatmap images...")
-        copper_heatmap = array_to_heatmap_image(
-            hotspots_result["copper_score"], request.__dict__, "copper"
-        )
-        gold_heatmap = array_to_heatmap_image(
-            hotspots_result["gold_score"], request.__dict__, "gold"
-        )
-
-        heatmap_bounds = {
+        # Step 7: Generate heatmap grids and convert to Base64 PNG images
+        logger.info("Generating heatmap grids and images...")
+        bounds_dict = {
             "lat_min": request.lat_min,
             "lat_max": request.lat_max,
             "lon_min": request.lon_min,
             "lon_max": request.lon_max,
         }
 
-        # Step 7b: Build structured 50x50 heatmap grid aligned with AOI bounds.
+        # Copper heatmap: based on iron oxide + ferrous minerals
+        copper_grid = analysis.generate_copper_heatmap_grid(
+            mineral_indices_result["iron_oxide"],
+            transform,
+            bounds_dict,
+            grid_size=50,
+        )
+        copper_heatmap = analysis.grid_to_colored_heatmap_image(copper_grid)
+
+        # Gold heatmap: based purely on clay minerals
+        gold_grid = analysis.generate_gold_heatmap_grid(
+            mineral_indices_result["clay"],
+            transform,
+            bounds_dict,
+            grid_size=50,
+        )
+        gold_heatmap = analysis.grid_to_colored_heatmap_image(gold_grid)
+
+        heatmap_bounds = bounds_dict
+
+        # Step 7b: Build structured 50x50 combined heatmap grid aligned with AOI bounds.
         # This uses the underlying mineral indices (iron oxide + clay + ferrous proxy)
-        # so the frontend can render a grid that matches the legend exactly.
+        # so the frontend can still access the full grid structure if needed.
         heatmap_grid = analysis.generate_heatmap_grid(
             mineral_indices_result["iron_oxide"],
             mineral_indices_result["clay"],
             transform,
-            {
-                "lat_min": request.lat_min,
-                "lat_max": request.lat_max,
-                "lon_min": request.lon_min,
-                "lon_max": request.lon_max,
-            },
+            bounds_dict,
             grid_size=50,
         )
 
