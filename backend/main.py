@@ -7,12 +7,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
+import sys
+import os
 
-# Import routes
+# Ensure backend package is on the Python path so we can import routes reliably
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Import analysis router with graceful fallback if it is not available
 try:
-    from .routes import analyze
-except ImportError:
-    analyze = None
+    from routes.analyze import router as analyze_router
+    ANALYZE_AVAILABLE = True
+except ImportError as e:
+    print(f"Failed to import analyze router: {e}")
+    ANALYZE_AVAILABLE = False
+    analyze_router = None
 
 
 @asynccontextmanager
@@ -47,7 +55,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "health": "/health",
-            "analyze": "/analyze" if analyze else "Coming soon"
+            "analyze": "/analyze" if ANALYZE_AVAILABLE else "Coming soon",
         }
     }
 
@@ -58,8 +66,8 @@ async def health_check():
     return {"status": "ok"}
 
 
-if analyze:
-    app.include_router(analyze.router, prefix="/analyze", tags=["analysis"])
+if ANALYZE_AVAILABLE:
+    app.include_router(analyze_router, prefix="/analyze", tags=["analysis"])
 
 
 if __name__ == "__main__":
