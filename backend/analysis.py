@@ -243,11 +243,12 @@ def _generate_single_index_grid(
     transform,
     bounds: Dict[str, float],
     grid_size: int = 50,
+    apply_realistic_threshold: bool = True,
 ) -> np.ndarray:
     """
     Helper: sample a single mineral index onto a regular 2D grid using MAX aggregation.
     
-    FIXED: Now aggregates over cell regions instead of point sampling!
+    FIXED: Now aggregates over cell regions and applies realistic thresholding!
     """
 
     index = np.nan_to_num(index_array.astype("float32"), nan=0.0)
@@ -303,16 +304,25 @@ def _generate_single_index_grid(
             except Exception:
                 grid[i, j] = 0.0
 
-    # Normalize to 0–1 range
+    # NEW: Apply realistic thresholding before normalization
+    if apply_realistic_threshold:
+        # Calculate meaningful threshold (e.g., 50th percentile)
+        valid_values = grid[grid > 0]
+        if len(valid_values) > 0:
+            threshold = np.percentile(valid_values, 40)  # Only top 60% of values
+            grid[grid < threshold] = 0.0  # Zero out weak signals
+            print(f"[HEATMAP] Applied threshold: {threshold:.4f}")
+
+    # Normalize to 0–1 range (only non-zero values)
     finite_mask = np.isfinite(grid) & (grid > 0)
     
-    # DEBUG LOGGING
     print(f"[HEATMAP DEBUG] Grid before normalization - Min: {np.min(grid):.4f}, Max: {np.max(grid):.4f}, Non-zero count: {np.count_nonzero(grid)}")
     
     if finite_mask.any():
         g_min = float(grid[finite_mask].min())
         g_max = float(grid[finite_mask].max())
         if g_max > g_min:
+            # Keep the range tighter to preserve variation
             grid[finite_mask] = (grid[finite_mask] - g_min) / (g_max - g_min)
         else:
             grid[finite_mask] = 1.0
@@ -320,7 +330,6 @@ def _generate_single_index_grid(
         grid[:, :] = 0.0
         print("[HEATMAP DEBUG] WARNING: All grid values are zero!")
 
-    # DEBUG LOGGING AFTER
     print(f"[HEATMAP DEBUG] Grid after normalization - Min: {np.min(grid):.4f}, Max: {np.max(grid):.4f}, Non-zero count: {np.count_nonzero(grid)}")
     
     return grid
@@ -342,7 +351,7 @@ def generate_copper_heatmap_grid(
     # Combined copper potential index
     combined = (iron + ferrous) / 2.0
 
-    return _generate_single_index_grid(combined, transform, bounds, grid_size)
+    return _generate_single_index_grid(combined, transform, bounds, grid_size, apply_realistic_threshold=True)
 
 
 def generate_gold_heatmap_grid(
@@ -355,21 +364,19 @@ def generate_gold_heatmap_grid(
     Generate a 2D potential grid for gold, based purely on clay minerals.
     """
 
-    return _generate_single_index_grid(clay_index, transform, bounds, grid_size)
+    return _generate_single_index_grid(clay_index, transform, bounds, grid_size, apply_realistic_threshold=True)
 
 
 def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
     """
-    Convert a 2D grid of values in [0, 1] to a coloured PNG heatmap (Base64).
-
-    Each cell in the grid becomes one pixel in a 50x50 image, coloured using
-    the legend:
-      - 0.0–0.25  → Light Yellow (255, 255, 153)
-      - 0.25–0.5  → Yellow      (255, 255,   0)
-      - 0.5–0.75  → Orange      (255, 165,   0)
-      - 0.75–1.0  → Red         (255,   0,   0)
-
-    FIXED: Returns ONLY base64 string (no data URL prefix) to avoid double prefix bug.
+    Convert a 2D grid to a REALISTIC, TRANSPARENT PNG heatmap.
+    
+    FIXED: Now uses RGBA with transparency for low-confidence areas!
+    - Low values (< 0.2) = Fully transparent
+    - Medium values = Semi-transparent with color
+    - High values = Solid color
+    
+    This creates realistic, patchy heatmaps centered on hotspots!
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -379,15 +386,15 @@ def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
 
     rows, cols = grid.shape
     
-    # DEBUG: Log grid statistics
     logger.info(f"[IMAGE DEBUG] Grid shape: {rows}x{cols}")
     logger.info(f"[IMAGE DEBUG] Grid min: {np.min(grid):.4f}, max: {np.max(grid):.4f}")
     logger.info(f"[IMAGE DEBUG] Grid non-zero: {np.count_nonzero(grid)}")
 
-    # Create a new RGB image with one pixel per grid cell
-    image = Image.new("RGB", (cols, rows))
+    # Create RGBA image (with alpha channel for transparency)
+    image = Image.new("RGBA", (cols, rows), (0, 0, 0, 0))
     
     color_counts = {
+        "transparent": 0,
         "light_yellow": 0,
         "yellow": 0,
         "orange": 0,
@@ -400,20 +407,32 @@ def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
             if not np.isfinite(v):
                 v = 0.0
 
-            # Clamp just in case
             v = max(0.0, min(1.0, float(v)))
 
-            if v < 0.25:
-                color = (255, 255, 153)  # Light Yellow
+            # NEW: Apply transparency based on value strength
+            if v < 0.05:
+                # Very weak signal = fully transparent
+                color = (0, 0, 0, 0)
+                color_counts["transparent"] += 1
+            elif v < 0.25:
+                # Weak signal = light yellow, semi-transparent
+                alpha = int(v * 400)  # Scale opacity with value
+                color = (255, 255, 153, alpha)
                 color_counts["light_yellow"] += 1
             elif v < 0.5:
-                color = (255, 255, 0)  # Yellow
+                # Medium signal = yellow, more opaque
+                alpha = int(100 + v * 310)
+                color = (255, 255, 0, alpha)
                 color_counts["yellow"] += 1
             elif v < 0.75:
-                color = (255, 165, 0)  # Orange
+                # Strong signal = orange, mostly opaque
+                alpha = int(150 + v * 200)
+                color = (255, 165, 0, alpha)
                 color_counts["orange"] += 1
             else:
-                color = (255, 0, 0)  # Red
+                # Very strong signal = red, fully opaque
+                alpha = 255
+                color = (255, 0, 0, alpha)
                 color_counts["red"] += 1
 
             image.putpixel((j, i), color)
@@ -431,7 +450,6 @@ def grid_to_colored_heatmap_image(grid: np.ndarray) -> str:
     
     logger.info(f"[IMAGE DEBUG] Final base64 string length: {len(encoded)} characters")
     
-    # FIXED: Return ONLY base64 string, frontend will add data URL prefix
     return encoded
 
 
