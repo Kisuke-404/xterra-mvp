@@ -401,6 +401,9 @@ async def analyze_aoi(request: AOIRequest):
             grid_size=50,
         )
         copper_heatmap = analysis.grid_to_colored_heatmap_image(copper_grid)
+        
+        # DEBUG: Log copper heatmap size
+        logger.info(f"[HEATMAP] Copper heatmap size: {len(copper_heatmap)} characters")
 
         # Gold heatmap: based purely on clay minerals
         gold_grid = analysis.generate_gold_heatmap_grid(
@@ -410,6 +413,9 @@ async def analyze_aoi(request: AOIRequest):
             grid_size=50,
         )
         gold_heatmap = analysis.grid_to_colored_heatmap_image(gold_grid)
+        
+        # DEBUG: Log gold heatmap size
+        logger.info(f"[HEATMAP] Gold heatmap size: {len(gold_heatmap)} characters")
 
         heatmap_bounds = bounds_dict
 
