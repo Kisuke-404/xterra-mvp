@@ -19,13 +19,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of the application code (including backend/data/carlin_s2.tif)
 COPY . .
+
+# Verify satellite data file was copied successfully
+RUN ls -lh /app/backend/data/carlin_s2.tif || echo "WARNING: Satellite data file not found!"
 
 # Expose the port uvicorn will listen on
 EXPOSE 8000
 
 # Start the FastAPI app with uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-

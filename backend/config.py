@@ -49,4 +49,5 @@ CARLIN_TREND_COORDS = {
 print(f"[Config] Project Root: {PROJECT_ROOT}")
 print(f"[Config] Data Directory: {DATA_DIR}")
 print(f"[Config] Carlin Image Path: {CARLIN_IMAGE_PATH}")
+print(f"[Config] File exists: {CARLIN_IMAGE_PATH.exists()}")
 
