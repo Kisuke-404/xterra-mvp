@@ -56,11 +56,7 @@ export default function Home() {
   const [goldHeatmap, setGoldHeatmap] = useState<string>("")
   const [heatmapBounds, setHeatmapBounds] = useState<any>(null)
 
-  // NEW: Loading state for backend analysis
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analysisMessage, setAnalysisMessage] = useState("")
-
-  // NEW: Hotspots data from backend
+  // Hotspots data from backend
   const [hotspotsData, setHotspotsData] = useState<any[]>([])
 
   const [aoiDimensions, setAoiDimensions] = useState<{ size: number; isValid: boolean } | null>(null)
@@ -468,10 +464,6 @@ export default function Home() {
     setActiveStage("insights")
     setHotspotsVisible(false)
     
-    // NEW: Set analyzing state
-    setIsAnalyzing(true)
-    setAnalysisMessage("Initializing analysis engine...")
-    
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
       
@@ -485,69 +477,39 @@ export default function Home() {
       
       console.log("[v0] Sending bounds to backend:", bounds)
       
-      // Track response time for cold start detection
-      const startTime = Date.now()
-      
-      // Update message after 3 seconds (likely cold start)
-      const coldStartTimer = setTimeout(() => {
-        setAnalysisMessage("Waking up analysis engine... (~30s)")
-      }, 3000)
-      
       const response = await fetch(`${backendUrl}/analyze/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bounds),
       })
       
-      clearTimeout(coldStartTimer)
+      console.log("[v0] ✓ Backend responded")
       
-      const responseTime = ((Date.now() - startTime) / 1000).toFixed(1)
-      console.log(`[v0] ✓ Backend responded in ${responseTime}s`)
-      
-      if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.status}`)
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Store hotspots data for Hotspots component
+        if (data.hotspots) {
+          setHotspotsData(data.hotspots)
+          console.log("[v0] Stored", data.hotspots.length, "hotspots")
+        }
+        
+        if (data.copper_heatmap) setCopperHeatmap(data.copper_heatmap)
+        if (data.gold_heatmap) setGoldHeatmap(data.gold_heatmap)
+        if (data.heatmap_bounds) setHeatmapBounds(data.heatmap_bounds)
+        
+        console.log("[v0] ✓ Analysis complete")
       }
-      
-      setAnalysisMessage("Processing satellite imagery...")
-      
-      const data = await response.json()
-      
-      // NEW: Store hotspots data for Hotspots component
-      if (data.hotspots) {
-        setHotspotsData(data.hotspots)
-        console.log("[v0] Stored", data.hotspots.length, "hotspots")
-      }
-      
-      if (data.copper_heatmap) setCopperHeatmap(data.copper_heatmap)
-      if (data.gold_heatmap) setGoldHeatmap(data.gold_heatmap)
-      if (data.heatmap_bounds) setHeatmapBounds(data.heatmap_bounds)
-      
-      console.log("[v0] ✓ Analysis complete")
-      setAnalysisMessage("Analysis complete!")
-      
-      // Clear loading state after short delay
-      setTimeout(() => {
-        setIsAnalyzing(false)
-        setAnalysisMessage("")
-      }, 1000)
       
     } catch (error) {
       console.error("[v0] Error calling backend:", error)
-      setAnalysisMessage("Analysis failed")
-      
-      setTimeout(() => {
-        setIsAnalyzing(false)
-        setAnalysisMessage("")
-        alert("Analysis failed. The backend may be waking up - please wait 30 seconds and try again.")
-      }, 2000)
+      // Silently fail - fallback data will still show
     }
     
     // AUTO-PROGRESS: Show hotspots after insights load
-    if (!isAnalyzing) {
-      setTimeout(() => {
-        setHotspotsVisible(true)
-      }, 5000)
-    }
+    setTimeout(() => {
+      setHotspotsVisible(true)
+    }, 5000)
   }
 
   const handleInsightsLoadComplete = () => {
@@ -565,14 +527,6 @@ export default function Home() {
             <div className="absolute top-20 left-4 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold z-50 flex items-center gap-2 shadow-lg">
               <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
               Drawing AOI
-            </div>
-          )}
-
-          {/* NEW: Analysis Loading Indicator */}
-          {isAnalyzing && analysisMessage && (
-            <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-black/90 text-white px-6 py-3 rounded-lg text-sm font-semibold z-50 flex items-center gap-3 shadow-2xl border border-white/20">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              {analysisMessage}
             </div>
           )}
 
