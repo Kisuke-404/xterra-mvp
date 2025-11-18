@@ -127,7 +127,12 @@ def generate_synthetic_data_at_coordinates(file_path):
 
 
 def download_carlin_data():
-    """Download real Carlin data and reposition, or generate synthetic fallback"""
+    """
+    Download real Carlin data and reposition, or generate synthetic fallback
+    
+    NOTE: This function is now DISABLED because we bundle the real satellite data
+    in the Docker image. Kept here for reference only.
+    """
     file_path = "/app/backend/data/carlin_s2.tif"
     temp_path = "/app/backend/data/carlin_original.tif"
 
@@ -220,11 +225,21 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for startup and shutdown events.
 
-    On startup we ensure the Carlin satellite data is present by
-    downloading it from Google Drive if needed.
+    UPDATED: Now uses bundled satellite data from Docker image instead of downloading.
+    The download_carlin_data() function is disabled to prevent overwriting the real data.
     """
-
-    download_carlin_data()
+    # DISABLED: download_carlin_data()  
+    # The above function would overwrite our bundled 291MB real satellite data!
+    
+    # Instead, verify the bundled satellite data exists
+    from config import CARLIN_IMAGE_PATH
+    
+    if CARLIN_IMAGE_PATH.exists():
+        file_size_mb = CARLIN_IMAGE_PATH.stat().st_size / 1024 / 1024
+        print(f"✓ Using bundled satellite data: {CARLIN_IMAGE_PATH} ({file_size_mb:.1f}MB)")
+    else:
+        print(f"⚠️ WARNING: Satellite data not found at {CARLIN_IMAGE_PATH}")
+    
     yield
 
 
