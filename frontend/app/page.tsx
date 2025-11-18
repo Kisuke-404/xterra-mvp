@@ -60,6 +60,9 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisMessage, setAnalysisMessage] = useState("")
 
+  // NEW: Hotspots data from backend
+  const [hotspotsData, setHotspotsData] = useState<any[]>([])
+
   const [aoiDimensions, setAoiDimensions] = useState<{ size: number; isValid: boolean } | null>(null)
   const dimensionOverlayRef = useRef<any>(null)
   const currentFeatureRef = useRef<any>(null)
@@ -509,6 +512,12 @@ export default function Home() {
       
       const data = await response.json()
       
+      // NEW: Store hotspots data for Hotspots component
+      if (data.hotspots) {
+        setHotspotsData(data.hotspots)
+        console.log("[v0] Stored", data.hotspots.length, "hotspots")
+      }
+      
       if (data.copper_heatmap) setCopperHeatmap(data.copper_heatmap)
       if (data.gold_heatmap) setGoldHeatmap(data.gold_heatmap)
       if (data.heatmap_bounds) setHeatmapBounds(data.heatmap_bounds)
@@ -657,7 +666,12 @@ export default function Home() {
         onLoadingComplete={handleInsightsLoadComplete}
       />
       <Legend isOpen={legendOpen} onClose={() => setLegendOpen(false)} />
-      <Hotspots mapRef={mapRef} aoiGeometry={drawnAOI} isVisible={hotspotsVisible} />
+      <Hotspots 
+        mapRef={mapRef} 
+        aoiGeometry={drawnAOI} 
+        isVisible={hotspotsVisible}
+        hotspots={hotspotsData}
+      />
       {renderContent()}
     </main>
   )
